@@ -83,11 +83,6 @@ class AgentVM:
             print(f"   {export_line}")
             print(f"\n🔄 Then run: source {profile_file}")
         
-    def _generate_password(self):
-        """Generate a secure random password"""
-        chars = string.ascii_letters + string.digits + "!@#$%^&*"
-        return ''.join(secrets.choice(chars) for _ in range(16))
-        
     def _wait_for_boot(self, instance: Instance):
         """Wait for instance to boot and be SSH-ready"""
         print(f"⏳ Waiting for VM to boot...")
@@ -131,11 +126,9 @@ echo "Setup complete!"
         with open(self.config_file, 'r') as f:
             return json.load(f)
             
-    def _interactive_session(self, instance: Instance, session_type="editing"):
+    def _interactive_session(self, password: string, instance: Instance, session_type="editing"):
         """Show SSH details and wait for user to save or cancel"""
         ip = instance.ipv4[0]
-        password = Instance.generate_root_password()
-        instance.reset_instance_root_password(password)
         
         print(f"""
 🚀 VM Ready for {session_type}!
@@ -174,12 +167,13 @@ When you're done configuring:
         print("🚀 Initializing new agent environment...")
         
         # Create VM
+        root_password = Instance.generate_root_password()
         try:
             instance = self.linode.linode.instance_create(
                 ltype='g6-nanode-1',  # $5/month instance
                 region='us-east',
                 image='linode/ubuntu22.04',
-                root_pass=self._generate_password()
+                root_pass=root_password
             )
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
@@ -192,7 +186,7 @@ When you're done configuring:
             self._setup_base_vm(instance)
             
             # Interactive setup session
-            should_save = self._interactive_session(instance, "setup")
+            should_save = self._interactive_session(root_password, instance, "setup")
             
             if should_save:
                 print("💾 Saving configured environment...")
@@ -209,7 +203,8 @@ When you're done configuring:
                     'repo_name': self.repo_name,
                     'base_image_id': image.id,
                     'instance_type': 'g6-nanode-1',
-                    'created_at': int(time.time())
+                    'created_at': int(time.time()),
+                    'root_password': root_password
                 }
                 self._save_config(config)
                 
@@ -236,7 +231,7 @@ When you're done configuring:
                 ltype=config['instance_type'],
                 region='us-east',
                 image=config['base_image_id'],
-                root_pass=self._generate_password()
+                root_pass=config['root_password']
             )
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
@@ -246,7 +241,7 @@ When you're done configuring:
             self._wait_for_boot(instance)
             
             # Interactive edit session
-            should_save = self._interactive_session(instance, "editing")
+            should_save = self._interactive_session(config['root_password'], instance, "editing")
             
             if should_save:
                 print("💾 Saving updated environment...")
@@ -282,11 +277,11 @@ When you're done configuring:
         
         # Create VM from saved image
         try:
-            instance = self.linode.linode.instances.create(
+            instance = self.linode.linode.instance_create(
                 ltype=config['instance_type'],
                 region='us-east',
                 image=config['base_image_id'],
-                root_pass=self._generate_password()
+                root_pass=config['root_password']
             )
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
@@ -297,7 +292,7 @@ When you're done configuring:
             
             # Just show SSH details - no saving option
             ip = instance.ipv4[0]
-            password = instance.root_pass
+            password = config['root_password']
             
             print(f"""
 🤖 Build VM Ready!
