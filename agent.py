@@ -88,7 +88,7 @@ class AgentVM:
         chars = string.ascii_letters + string.digits + "!@#$%^&*"
         return ''.join(secrets.choice(chars) for _ in range(16))
         
-    def _wait_for_boot(self, instance):
+    def _wait_for_boot(self, instance: Instance):
         """Wait for instance to boot and be SSH-ready"""
         print(f"⏳ Waiting for VM to boot...")
         
@@ -101,7 +101,7 @@ class AgentVM:
         time.sleep(30)
         print("✅ VM is ready!")
         
-    def _setup_base_vm(self, instance):
+    def _setup_base_vm(self, instance: Instance):
         """Setup basic tools on the VM"""
         ip = instance.ipv4[0]
         
@@ -131,10 +131,11 @@ echo "Setup complete!"
         with open(self.config_file, 'r') as f:
             return json.load(f)
             
-    def _interactive_session(self, instance, session_type="editing"):
+    def _interactive_session(self, instance: Instance, session_type="editing"):
         """Show SSH details and wait for user to save or cancel"""
         ip = instance.ipv4[0]
-        password = instance.root_pass
+        password = Instance.generate_root_password()
+        instance.reset_instance_root_password(password)
         
         print(f"""
 🚀 VM Ready for {session_type}!
