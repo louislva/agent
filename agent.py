@@ -13,7 +13,8 @@ import subprocess
 from pathlib import Path
 
 try:
-    import linode_api4
+    from linode_api4 import LinodeClient
+    from linode_api4 import Instance
 except ImportError:
     print("Please install: pip install linode-api4")
     exit(1)
@@ -30,7 +31,7 @@ class AgentVM:
             self._setup_token()
             exit(1)
             
-        self.linode = linode_api4.LinodeApi(token)
+        self.linode = LinodeClient(token)
         
     def _setup_token(self):
         """Interactive token setup"""
@@ -94,7 +95,7 @@ class AgentVM:
         # Wait for instance to be running
         while instance.status != 'running':
             time.sleep(5)
-            instance = self.linode.linode.instances.get(instance.id)
+            instance = self.linode.linode.instances(Instance.id == instance.id)[0]
             
         # Wait a bit more for SSH to be ready
         time.sleep(30)
@@ -173,7 +174,7 @@ When you're done configuring:
         
         # Create VM
         try:
-            instance = self.linode.linode.instances.create(
+            instance = self.linode.linode.instance_create(
                 ltype='g6-nanode-1',  # $5/month instance
                 region='us-east',
                 image='linode/ubuntu22.04',
