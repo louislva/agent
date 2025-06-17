@@ -11,14 +11,20 @@ import secrets
 import string
 import subprocess
 from pathlib import Path
+from typing import TypedDict
 
 try:
-    from linode_api4 import LinodeClient
-    from linode_api4 import Instance
+    from linode_api4 import LinodeClient, Instance, Image
 except ImportError:
     print("Please install: pip install linode-api4")
     exit(1)
 
+class Config(TypedDict):
+    repo_name: str
+    base_image_id: str
+    instance_type: str
+    created_at: int
+    root_password: str
 
 class AgentVM:
     def __init__(self):
@@ -95,25 +101,18 @@ class AgentVM:
         # Wait a bit more for SSH to be ready
         time.sleep(30)
         print("✅ VM is ready!")
-        
-    def _setup_base_vm(self, instance: Instance):
-        """Setup basic tools on the VM"""
-        ip = instance.ipv4[0]
-        
-        # Basic setup script that will run on first boot
-        setup_script = f'''#!/bin/bash
-apt-get update
-apt-get install -y git curl wget vim
-mkdir -p /workspace
-cd /workspace
-git clone https://github.com/$(whoami)/{self.repo_name}.git 2>/dev/null || echo "Note: Could not clone repo - you may need to set this up manually"
-echo "Setup complete!"
-'''
-        
-        print("🔧 Setting up base environment...")
-        # In a real implementation, you'd SSH in and run this script
-        # For now, we'll just note it in the output
-        
+    
+    def _wait_for_image(self, image: Image):
+        """Wait for image to be ready"""
+        print("🖼️  Waiting for image to be ready...")
+
+        while image.status != 'available':
+            time.sleep(10)
+            image._api_get()
+            print(f"   Status: {image.status}")
+            
+        print("✅ Image is ready!")
+
     def _save_config(self, config):
         """Save configuration to .agentconfig"""
         with open(self.config_file, 'w') as f:
@@ -126,7 +125,7 @@ echo "Setup complete!"
         with open(self.config_file, 'r') as f:
             return json.load(f)
             
-    def _interactive_session(self, password: string, instance: Instance, session_type="editing"):
+    def _interactive_session(self, config: Config, instance: Instance, session_type="editing"):
         """Show SSH details and wait for user to save or cancel"""
         ip = instance.ipv4[0]
         
@@ -136,7 +135,7 @@ echo "Setup complete!"
 SSH Details:
   Host: {ip}
   User: root
-  Password: {password}
+  Password: {config['root_password']}
 
 SSH Command:
   ssh root@{ip}
@@ -165,55 +164,32 @@ When you're done configuring:
             return
             
         print("🚀 Initializing new agent environment...")
-        
+
+        # Save config
+        config: Config = {
+            'repo_name': self.repo_name,
+            'base_image_id': 'linode/ubuntu22.04',
+            'instance_type': 'g6-nanode-1', # $5/month instance
+            'created_at': int(time.time()),
+            'root_password': Instance.generate_root_password()
+        }
+        self._save_config(config)
+
+    def _create_vm(self, config: Config):        
         # Create VM
-        root_password = Instance.generate_root_password()
         try:
             instance = self.linode.linode.instance_create(
-                ltype='g6-nanode-1',  # $5/month instance
+                ltype=config['instance_type'],
                 region='us-east',
-                image='linode/ubuntu22.04',
-                root_pass=root_password
+                image=config['base_image_id'],
+                root_pass=config['root_password']
             )
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
             return
             
         print(f"✅ VM created: {instance.label}")
-        
-        try:
-            self._wait_for_boot(instance)
-            self._setup_base_vm(instance)
-            
-            # Interactive setup session
-            should_save = self._interactive_session(root_password, instance, "setup")
-            
-            if should_save:
-                print("💾 Saving configured environment...")
-                
-                # Create image from VM
-                disk_id = instance.disks[0].id
-                image = self.linode.images.create(
-                    disk_id,
-                    label=f"agent-{self.repo_name}-base"
-                )
-                
-                # Save config
-                config = {
-                    'repo_name': self.repo_name,
-                    'base_image_id': image.id,
-                    'instance_type': 'g6-nanode-1',
-                    'created_at': int(time.time()),
-                    'root_password': root_password
-                }
-                self._save_config(config)
-                
-                print("✅ Environment saved! You can now use 'agent edit' and 'agent build'")
-            
-        finally:
-            # Always clean up the temporary VM
-            print("🧹 Cleaning up temporary VM...")
-            instance.delete()
+        return instance
             
     def edit_environment(self):
         """Edit existing environment"""
@@ -224,45 +200,32 @@ When you're done configuring:
             return
             
         print("🔧 Spinning up environment for editing...")
-        
-        # Create VM from saved image
-        try:
-            instance = self.linode.linode.instances.create(
-                ltype=config['instance_type'],
-                region='us-east',
-                image=config['base_image_id'],
-                root_pass=config['root_password']
-            )
-        except Exception as e:
-            print(f"❌ Failed to create VM: {e}")
-            return
-            
-        try:
-            self._wait_for_boot(instance)
-            
-            # Interactive edit session
-            should_save = self._interactive_session(config['root_password'], instance, "editing")
+
+        # Spin up an instance
+        instance = self._create_vm(config)
+        self._wait_for_boot(instance)
+
+        try:            
+            # Interactive setup session
+            should_save = self._interactive_session(config, instance, "setup")
             
             if should_save:
-                print("💾 Saving updated environment...")
+                print("💾 Saving configured environment...")
                 
-                # Create new image
+                # Create image from VM
                 disk_id = instance.disks[0].id
                 image = self.linode.images.create(
                     disk_id,
-                    label=f"agent-{self.repo_name}-{int(time.time())}"
+                    label=f"agent-{self.repo_name}-base"
                 )
-                
-                # Update config
-                config['base_image_id'] = image.id
-                config['last_updated'] = int(time.time())
+                self._wait_for_image(image)
+
+                print("✅ Environment saved!")
+                config['base_image_id'] = image.__getattribute__("id")
                 self._save_config(config)
-                
-                print("✅ Environment updated!")
-                
         finally:
-            # Always clean up
-            print("🧹 Cleaning up...")
+            # Always clean up the temporary VM
+            print("🧹 Cleaning up temporary VM...")
             instance.delete()
             
     def build_session(self):

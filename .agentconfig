@@ -1,0 +1,7 @@
+{
+  "repo_name": "agent",
+  "base_image_id": "private/32628740",
+  "instance_type": "g6-nanode-1",
+  "created_at": 1750133299,
+  "root_password": "=uFZkwSET<i\"<\\KF*%?L3'rgDyo/1rRi%DLhWfj+B?OLB8!XsC9HmW'eN4|pwO3ot5cfGFa*4L7'+i7_N0HRMw*I-&P<6d3d`xi$"
+}
