@@ -278,32 +278,15 @@ When you're done configuring:
                 print(f"🔗 Connecting to existing VM (ID: {instance_id})...")
                 
                 # Fetch existing instance
-                try:
-                    instance = self.linode.linode.instances(Instance.id == int(instance_id))[0]
-                    print(f"✅ Found existing VM: {instance.label}")
-                except (IndexError, ValueError) as e:
-                    print(f"❌ Failed to find VM with ID {instance_id}: {e}")
-                    return
-                except Exception as e:
-                    print(f"❌ Error fetching VM: {e}")
-                    return
+                instance = self.linode.linode.instances(Instance.id == int(instance_id))[0]
+                print(f"✅ Found existing VM: {instance.label}")
             else:
                 print("🤖 Starting build session...")
                 
-                # Create VM from saved image
-                try:
-                    instance = self.linode.linode.instance_create(
-                        ltype=config['instance_type'],
-                        region='us-east',
-                        image=config['base_image_id'],
-                        root_pass=config['root_password']
-                    )
-                except Exception as e:
-                    print(f"❌ Failed to create VM: {e}")
-                    return
-                    
+                # Spin up an instance
+                instance = self._create_vm(config)
                 self._wait_for_boot(instance)
-            
+                    
             ip = instance.ipv4[0]
             password = config['root_password']
             
@@ -345,10 +328,6 @@ When you're done configuring:
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
             print("You may want to delete the VM manually: https://cloud.linode.com/linodes")
-
-            # print("\n🗑️  Destroying build VM...")
-            # instance.delete()
-            # print("✅ Build VM destroyed")
 
 
 def main():
