@@ -299,25 +299,6 @@ When you're done configuring:
             # self._ssh(config, instance, "apt update && apt install -y htop")
             # self._ssh(config, instance, "bash /root/code/setup.sh")
             
-            print(f"""
-🚀 VM Ready!
-
-SSH Details:
-  Host: {ip}
-  User: root
-  Password: {config['root_password']}
-
-SSH Command:
-  ssh root@{ip}
-
-VS Code Remote:
-  ssh://root@{ip}
-
-When you're done configuring:
-  [Enter] Save and exit
-  [Ctrl+C] Cancel and destroy VM
-""")
-            
             self._ssh(config, instance)
                 
         except Exception as e:
