@@ -179,8 +179,6 @@ SSH Command:
 VS Code Remote:
   ssh://root@{ip}
 
-📁 Your repo will be at: /workspace/{self.repo_name}/
-
 When you're done configuring:
   [Enter] Save and exit
   [Ctrl+C] Cancel and destroy VM
@@ -305,30 +303,37 @@ When you're done configuring:
             #     print(f"⚠️  Setup script failed: {e}")
             
             print(f"""
-    🤖 Build VM Ready!
+🚀 VM Ready!
 
-    SSH Details:
-    Host: {ip}
-    User: root
-    Password: {password}
+SSH Details:
+  Host: {ip}
+  User: root
+  Password: {config['root_password']}
 
-    📁 Your repo: /workspace/{self.repo_name}/
+SSH Command:
+  ssh root@{ip}
 
-    Opening SSH session...
-    """)
+VS Code Remote:
+  ssh://root@{ip}
+
+When you're done configuring:
+  [Enter] Save and exit
+  [Ctrl+C] Cancel and destroy VM
+""")
             
-            # Open SSH session and leave it open
-            env = os.environ.copy()
-            env['SSHPASS'] = password
-            ssh_cmd = f"sshpass -e ssh -o StrictHostKeyChecking=no root@{ip}"
-            
-            print("🚀 SSH session starting...")
-            subprocess.run(ssh_cmd, shell=True, env=env)
+            self._ssh(config, instance)
                 
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
             print("You may want to delete the VM manually: https://cloud.linode.com/linodes")
 
+    def _ssh(self, config: Config, instance: Instance):
+        ip = instance.ipv4[0]
+        # Open SSH session using key-based authentication
+        ssh_cmd = f"ssh -o StrictHostKeyChecking=no root@{ip}"
+        
+        print("🚀 SSH session starting...")
+        subprocess.run(ssh_cmd, shell=True)
 
 def main():
     import sys
