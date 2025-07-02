@@ -308,17 +308,17 @@ When you're done configuring:
             
             print(f"🔧 Running setup script on {ip}...")
             
-            # SSH in and run setup script
-            setup_cmd = f"""date >> auto.txt"""
+            # # SSH in and run setup script
+            # setup_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{ip} 'date >> auto.txt'"
             
-            try:
-                result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True)
-                if result.stdout:
-                    print("Setup output:", result.stdout)
-                if result.stderr:
-                    print("Setup errors:", result.stderr)
-            except Exception as e:
-                print(f"⚠️  Setup script failed: {e}")
+            # try:
+            #     result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True)
+            #     if result.stdout:
+            #         print("Setup output:", result.stdout)
+            #     if result.stderr:
+            #         print("Setup errors:", result.stderr)
+            # except Exception as e:
+            #     print(f"⚠️  Setup script failed: {e}")
             
             print(f"""
     🤖 Build VM Ready!
@@ -334,10 +334,12 @@ When you're done configuring:
     """)
             
             # Open SSH session and leave it open
-            ssh_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{ip}"
+            env = os.environ.copy()
+            env['SSHPASS'] = password
+            ssh_cmd = f"sshpass -e ssh -o StrictHostKeyChecking=no root@{ip}"
             
             print("🚀 SSH session starting...")
-            subprocess.run(ssh_cmd, shell=True)
+            subprocess.run(ssh_cmd, shell=True, env=env)
                 
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
