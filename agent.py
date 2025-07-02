@@ -288,19 +288,16 @@ When you're done configuring:
             ip = instance.ipv4[0]
             password = config['root_password']
             
-            print(f"🔧 Running setup script on {ip}...")
+            # Example: Sync current repo to VM
+            # self._rsync(config, instance)
             
-            # # SSH in and run setup script
-            # setup_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{ip} 'date >> auto.txt'"
+            # Example: Sync specific folder to custom path
+            # self._rsync(config, instance, local_path="./src", remote_path="/root/project")
             
-            # try:
-            #     result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True)
-            #     if result.stdout:
-            #         print("Setup output:", result.stdout)
-            #     if result.stderr:
-            #         print("Setup errors:", result.stderr)
-            # except Exception as e:
-            #     print(f"⚠️  Setup script failed: {e}")
+            # Example: Run setup commands after sync
+            # self._ssh(config, instance, "date >> auto.txt")
+            # self._ssh(config, instance, "apt update && apt install -y htop")
+            # self._ssh(config, instance, "bash /root/code/setup.sh")
             
             print(f"""
 🚀 VM Ready!
@@ -327,13 +324,95 @@ When you're done configuring:
             print(f"❌ Failed to create VM: {e}")
             print("You may want to delete the VM manually: https://cloud.linode.com/linodes")
 
-    def _ssh(self, config: Config, instance: Instance):
+    def _ssh(self, config: Config, instance: Instance, command=None):
+        """SSH to instance - either interactive session or execute command"""
         ip = instance.ipv4[0]
-        # Open SSH session using key-based authentication
-        ssh_cmd = f"ssh -o StrictHostKeyChecking=no root@{ip}"
         
-        print("🚀 SSH session starting...")
-        subprocess.run(ssh_cmd, shell=True)
+        if command:
+            # Execute a specific command and return result
+            ssh_cmd = f"ssh -o StrictHostKeyChecking=no root@{ip} '{command}'"
+            print(f"🔧 Executing: {command}")
+            
+            try:
+                result = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    print("Output:", result.stdout.strip())
+                if result.stderr:
+                    print("Errors:", result.stderr.strip())
+                return result
+            except Exception as e:
+                print(f"⚠️  Command failed: {e}")
+                return None
+        else:
+            # Open interactive SSH session
+            ssh_cmd = f"ssh -o StrictHostKeyChecking=no root@{ip}"
+            print("🚀 SSH session starting...")
+            subprocess.run(ssh_cmd, shell=True)
+
+    def _rsync(self, config: Config, instance: Instance, local_path=None, remote_path="/root/code", exclude_patterns=None):
+        """Rsync files from local to remote VM"""
+        ip = instance.ipv4[0]
+        
+        # Default to current working directory if no local path specified
+        if local_path is None:
+            local_path = os.getcwd()
+            
+        # Ensure local path ends with / for rsync behavior
+        if not local_path.endswith('/'):
+            local_path += '/'
+            
+        # Default exclude patterns
+        if exclude_patterns is None:
+            exclude_patterns = [
+                '.git/',
+                '__pycache__/',
+                '*.pyc',
+                '.DS_Store',
+                'node_modules/',
+                '.env',
+                '.agentconfig',
+                '*.log'
+            ]
+        
+        # Build exclude arguments
+        exclude_args = []
+        for pattern in exclude_patterns:
+            exclude_args.extend(['--exclude', pattern])
+        
+        # Build rsync command
+        rsync_cmd = [
+            'rsync',
+            '-avz',  # archive, verbose, compress
+            '--delete',  # delete files on remote that don't exist locally
+            '-e', 'ssh -o StrictHostKeyChecking=no',  # SSH options
+            *exclude_args,
+            local_path,
+            f'root@{ip}:{remote_path}'
+        ]
+        
+        print(f"📁 Syncing {local_path} → root@{ip}:{remote_path}")
+        
+        try:
+            result = subprocess.run(rsync_cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print("✅ Sync completed successfully")
+                if result.stdout:
+                    # Show a summary of what was synced
+                    lines = result.stdout.strip().split('\n')
+                    file_count = len([line for line in lines if line and not line.startswith('building') and not line.startswith('sent')])
+                    if file_count > 0:
+                        print(f"📊 Synced {file_count} files/directories")
+            else:
+                print("❌ Sync failed")
+                if result.stderr:
+                    print("Errors:", result.stderr.strip())
+                    
+            return result
+            
+        except Exception as e:
+            print(f"⚠️  Rsync failed: {e}")
+            return None
 
 def main():
     import sys
