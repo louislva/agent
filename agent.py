@@ -263,6 +263,106 @@ When you're done configuring:
             print("🧹 Cleaning up temporary VM...")
             instance.delete()
             
+    def _setup_git_credentials(self, config: Config, instance: Instance):
+        """Copy git credentials from local machine to VM"""
+        ip = instance.ipv4[0]
+        home = os.path.expanduser('~')
+        
+        print("🔑 Setting up git credentials...")
+        
+        # Create .ssh directory on VM
+        self._ssh(config, instance, "mkdir -p /root/.ssh && chmod 700 /root/.ssh")
+        
+        # Copy SSH keys if they exist
+        ssh_files_to_copy = []
+        potential_keys = ['id_rsa', 'id_rsa.pub', 'id_ed25519', 'id_ed25519.pub', 'config', 'known_hosts']
+        
+        for key_file in potential_keys:
+            local_key_path = os.path.join(home, '.ssh', key_file)
+            if os.path.exists(local_key_path):
+                ssh_files_to_copy.append(key_file)
+        
+        if ssh_files_to_copy:
+            print(f"📋 Copying SSH keys: {', '.join(ssh_files_to_copy)}")
+            
+            # Use rsync to copy SSH files
+            ssh_rsync_cmd = [
+                'rsync',
+                '-avz',
+                '-e', 'ssh -o StrictHostKeyChecking=no',
+                *[os.path.join(home, '.ssh', f) for f in ssh_files_to_copy],
+                f'root@{ip}:/root/.ssh/'
+            ]
+            
+            try:
+                result = subprocess.run(ssh_rsync_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✅ SSH keys copied successfully")
+                    
+                    # Set proper permissions for private keys
+                    self._ssh(config, instance, "chmod 600 /root/.ssh/id_* 2>/dev/null || true")
+                    self._ssh(config, instance, "chmod 644 /root/.ssh/*.pub 2>/dev/null || true")
+                    self._ssh(config, instance, "chmod 644 /root/.ssh/config 2>/dev/null || true")
+                    self._ssh(config, instance, "chmod 644 /root/.ssh/known_hosts 2>/dev/null || true")
+                else:
+                    print("⚠️  SSH key copy failed:", result.stderr.strip())
+            except Exception as e:
+                print(f"⚠️  SSH key copy failed: {e}")
+        else:
+            print("⚠️  No SSH keys found in ~/.ssh/")
+            
+        # Copy git config if it exists
+        gitconfig_path = os.path.join(home, '.gitconfig')
+        if os.path.exists(gitconfig_path):
+            print("📋 Copying git configuration...")
+            
+            git_rsync_cmd = [
+                'rsync',
+                '-avz',
+                '-e', 'ssh -o StrictHostKeyChecking=no',
+                gitconfig_path,
+                f'root@{ip}:/root/.gitconfig'
+            ]
+            
+            try:
+                result = subprocess.run(git_rsync_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✅ Git configuration copied successfully")
+                else:
+                    print("⚠️  Git config copy failed:", result.stderr.strip())
+            except Exception as e:
+                print(f"⚠️  Git config copy failed: {e}")
+        else:
+            print("⚠️  No .gitconfig found, setting up basic git config...")
+            
+            # Try to get git config from local machine
+            try:
+                name_result = subprocess.run(['git', 'config', 'user.name'], capture_output=True, text=True)
+                email_result = subprocess.run(['git', 'config', 'user.email'], capture_output=True, text=True)
+                
+                if name_result.returncode == 0 and email_result.returncode == 0:
+                    name = name_result.stdout.strip()
+                    email = email_result.stdout.strip()
+                    
+                    if name and email:
+                        self._ssh(config, instance, f'git config --global user.name "{name}"')
+                        self._ssh(config, instance, f'git config --global user.email "{email}"')
+                        print(f"✅ Set git user: {name} <{email}>")
+                    else:
+                        print("⚠️  Local git user.name or user.email not configured")
+                else:
+                    print("⚠️  Could not read local git configuration")
+            except Exception as e:
+                print(f"⚠️  Failed to setup git config: {e}")
+        
+        # Test git/SSH setup
+        print("🧪 Testing git setup...")
+        result = self._ssh(config, instance, "ssh -o StrictHostKeyChecking=no -T git@github.com")
+        if result and "successfully authenticated" in result.stderr:
+            print("✅ GitHub SSH authentication working!")
+        else:
+            print("⚠️  GitHub SSH test inconclusive (this might be normal)")
+
     def build_session(self, instance_id=None):
         """Start a build session"""
         config = self._load_config()
@@ -284,11 +384,12 @@ When you're done configuring:
                 # Spin up an instance
                 instance = self._create_vm(config)
                 self._wait_for_boot(instance)
-                    
+            
             ip = instance.ipv4[0]
-            password = config['root_password']
             
             # Example: Sync current repo to VM
+            # Setup git credentials
+            # self._setup_git_credentials(config, instance)
             # self._rsync(config, instance)
             
             # Example: Sync specific folder to custom path
@@ -312,6 +413,10 @@ SSH Command:
 
 VS Code Remote:
   ssh://root@{ip}
+
+Git Credentials: ✅ Configured
+  • SSH keys copied from ~/.ssh/
+  • Git config copied from ~/.gitconfig
 
 When you're done configuring:
   [Enter] Save and exit
