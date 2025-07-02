@@ -325,10 +325,13 @@ Opening SSH session...
             print("🚀 SSH session starting (VM will be destroyed when you exit)...")
             subprocess.run(ssh_cmd, shell=True)
                 
-        finally:
-            print("\n🗑️  Destroying build VM...")
-            instance.delete()
-            print("✅ Build VM destroyed")
+        except Exception as e:
+            print(f"❌ Failed to create VM: {e}")
+            print("You may want to delete the VM manually: https://cloud.linode.com/linodes")
+
+            # print("\n🗑️  Destroying build VM...")
+            # instance.delete()
+            # print("✅ Build VM destroyed")
 
 
 def main():
