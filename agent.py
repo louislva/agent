@@ -218,7 +218,8 @@ When you're done configuring:
                 ltype=config['instance_type'],
                 region='us-east',
                 image=config['base_image_id'],
-                root_pass=config['root_password']
+                root_pass=config['root_password'],
+                authorized_keys=["~/.ssh/id_rsa.pub"]
             )
         except Exception as e:
             print(f"❌ Failed to create VM: {e}")
