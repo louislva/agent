@@ -264,7 +264,7 @@ When you're done configuring:
             print("🧹 Cleaning up temporary VM...")
             instance.delete()
             
-    def build_session(self):
+    def build_session(self, instance_id=None):
         """Start a build session"""
         config = self._load_config()
         
@@ -272,22 +272,36 @@ When you're done configuring:
             print("❌ No environment found. Run 'agent init' first.")
             return
             
-        print("🤖 Starting build session...")
-        
-        # Create VM from saved image
         try:
-            instance = self.linode.linode.instance_create(
-                ltype=config['instance_type'],
-                region='us-east',
-                image=config['base_image_id'],
-                root_pass=config['root_password']
-            )
-        except Exception as e:
-            print(f"❌ Failed to create VM: {e}")
-            return
-            
-        try:
-            self._wait_for_boot(instance)
+            if instance_id:
+                print(f"🔗 Connecting to existing VM (ID: {instance_id})...")
+                
+                # Fetch existing instance
+                try:
+                    instance = self.linode.linode.instances(Instance.id == int(instance_id))[0]
+                    print(f"✅ Found existing VM: {instance.label}")
+                except (IndexError, ValueError) as e:
+                    print(f"❌ Failed to find VM with ID {instance_id}: {e}")
+                    return
+                except Exception as e:
+                    print(f"❌ Error fetching VM: {e}")
+                    return
+            else:
+                print("🤖 Starting build session...")
+                
+                # Create VM from saved image
+                try:
+                    instance = self.linode.linode.instance_create(
+                        ltype=config['instance_type'],
+                        region='us-east',
+                        image=config['base_image_id'],
+                        root_pass=config['root_password']
+                    )
+                except Exception as e:
+                    print(f"❌ Failed to create VM: {e}")
+                    return
+                    
+                self._wait_for_boot(instance)
             
             ip = instance.ipv4[0]
             password = config['root_password']
@@ -307,22 +321,22 @@ When you're done configuring:
                 print(f"⚠️  Setup script failed: {e}")
             
             print(f"""
-🤖 Build VM Ready!
+    🤖 Build VM Ready!
 
-SSH Details:
-  Host: {ip}
-  User: root
-  Password: {password}
+    SSH Details:
+    Host: {ip}
+    User: root
+    Password: {password}
 
-📁 Your repo: /workspace/{self.repo_name}/
+    📁 Your repo: /workspace/{self.repo_name}/
 
-Opening SSH session...
-""")
+    Opening SSH session...
+    """)
             
             # Open SSH session and leave it open
             ssh_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{ip}"
             
-            print("🚀 SSH session starting (VM will be destroyed when you exit)...")
+            print("🚀 SSH session starting...")
             subprocess.run(ssh_cmd, shell=True)
                 
         except Exception as e:
@@ -337,8 +351,8 @@ Opening SSH session...
 def main():
     import sys
     
-    if len(sys.argv) != 2:
-        print("Usage: python agent.py [init|edit|build]")
+    if len(sys.argv) < 2:
+        print("Usage: python agent.py [init|edit|build [--continue <linode_id>]]")
         return
         
     command = sys.argv[1]
@@ -349,7 +363,14 @@ def main():
     elif command == 'edit':
         agent.edit_environment()
     elif command == 'build':
-        agent.build_session()
+        # Check for --continue flag
+        if len(sys.argv) >= 4 and sys.argv[2] == '--continue':
+            instance_id = sys.argv[3]
+            agent.build_session(instance_id=instance_id)
+        elif len(sys.argv) == 2:
+            agent.build_session()
+        else:
+            print("Usage for build: python agent.py build [--continue <linode_id>]")
     else:
         print("Unknown command. Use: init, edit, or build")
 
