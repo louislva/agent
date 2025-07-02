@@ -91,27 +91,63 @@ class AgentVM:
         
     def _wait_for_boot(self, instance: Instance):
         """Wait for instance to boot and be SSH-ready"""
-        print(f"⏳ Waiting for VM to boot...")
+        import sys
+        
+        start_time = time.time()
+        last_status = None
+        status_start_time = start_time
         
         # Wait for instance to be running
         while instance.status != 'running':
             time.sleep(5)
             instance = self.linode.linode.instances(Instance.id == instance.id)[0]
             
-        # Wait a bit more for SSH to be ready
-        time.sleep(30)
-        print("✅ VM is ready!")
+            # Track status changes
+            if instance.status != last_status:
+                if last_status is not None:
+                    print()  # New line when status changes
+                last_status = instance.status
+                status_start_time = time.time()
+            
+            # Show current status with time in that status
+            elapsed_in_status = int(time.time() - status_start_time)
+            total_elapsed = int(time.time() - start_time)
+            
+            print(f"\r⏳ Status: {instance.status} ({elapsed_in_status}s) | Total: {total_elapsed}s", end='', flush=True)
+        
+        # Wait for SSH to be ready
+        print(f"\n⏳ Status: ssh_ready (0s) | Total: {int(time.time() - start_time)}s", end='', flush=True)
+        ssh_start = time.time()
+        
+        for i in range(30):
+            time.sleep(1)
+            ssh_elapsed = int(time.time() - ssh_start)
+            total_elapsed = int(time.time() - start_time)
+            print(f"\r⏳ Status: ssh_ready ({ssh_elapsed}s) | Total: {total_elapsed}s", end='', flush=True)
+            
+        print("\n✅ VM is ready!")
     
     def _wait_for_image(self, image: Image):
         """Wait for image to be ready"""
         print("🖼️  Waiting for image to be ready...")
 
+        wait_time = 0
+        max_wait_time = 600  # 10 minutes max for image creation
+        
         while image.status != 'available':
             time.sleep(10)
+            wait_time += 10
             image._api_get()
-            print(f"   Status: {image.status}")
             
-        print("✅ Image is ready!")
+            # Calculate percentage based on typical image creation time
+            percentage = min(int((wait_time / max_wait_time) * 95), 95)
+            print(f"   Status: {image.status.title()} ({percentage}%)")
+            
+            if wait_time >= max_wait_time:
+                print("⚠️  Image creation taking longer than expected...")
+                break
+            
+        print("✅ Image is ready! (100%)")
 
     def _save_config(self, config):
         """Save configuration to .agentconfig"""
@@ -253,9 +289,22 @@ When you're done configuring:
         try:
             self._wait_for_boot(instance)
             
-            # Just show SSH details - no saving option
             ip = instance.ipv4[0]
             password = config['root_password']
+            
+            print(f"🔧 Running setup script on {ip}...")
+            
+            # SSH in and run setup script
+            setup_cmd = f"""date >> auto.txt"""
+            
+            try:
+                result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    print("Setup output:", result.stdout)
+                if result.stderr:
+                    print("Setup errors:", result.stderr)
+            except Exception as e:
+                print(f"⚠️  Setup script failed: {e}")
             
             print(f"""
 🤖 Build VM Ready!
@@ -265,22 +314,19 @@ SSH Details:
   User: root
   Password: {password}
 
-SSH Command:
-  ssh root@{ip}
-
 📁 Your repo: /workspace/{self.repo_name}/
 
-Press Ctrl+C when done to destroy the VM.
+Opening SSH session...
 """)
             
-            # Just wait for Ctrl+C
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                print("\n🗑️  Destroying build VM...")
+            # Open SSH session and leave it open
+            ssh_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{ip}"
+            
+            print("🚀 SSH session starting (VM will be destroyed when you exit)...")
+            subprocess.run(ssh_cmd, shell=True)
                 
         finally:
+            print("\n🗑️  Destroying build VM...")
             instance.delete()
             print("✅ Build VM destroyed")
 
