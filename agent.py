@@ -292,7 +292,7 @@ When you're done configuring:
             # self._rsync(config, instance)
             
             # Example: Sync specific folder to custom path
-            # self._rsync(config, instance, local_path="./src", remote_path="/root/project")
+            self._rsync(config, instance, local_path="./", remote_path="/root/workspace")
             
             # Example: Run setup commands after sync
             # self._ssh(config, instance, "date >> auto.txt")
